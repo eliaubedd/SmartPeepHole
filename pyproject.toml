@@ -1,0 +1,11 @@
+[project]
+name = "smartpeephole"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.9.23"
+dependencies = [
+    "ipykernel>=6.31.0",
+    "pydub>=0.25.1",
+    "pyflac>=3.0.0",
+]
