@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = "==3.9.23"
 dependencies = [
     "ipykernel>=6.31.0",
-    "pydub>=0.25.1",
-    "pyflac>=3.0.0",
+    "mediapipe==0.10.9",
+    "soundfile>=0.13.1",
+    "wespeakerruntime>=1.0.1",
 ]
