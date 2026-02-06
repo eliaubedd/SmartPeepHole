@@ -3,10 +3,14 @@ name = "smartpeephole"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "==3.9.23"
+requires-python = "==3.9.*"
 dependencies = [
+    "deepface>=0.0.98",
     "ipykernel>=6.31.0",
     "mediapipe==0.10.9",
+    "scikit-learn>=1.6.1",
+    "sortedcontainers>=2.4.0",
     "soundfile>=0.13.1",
+    "tf-keras>=2.19.0",
     "wespeakerruntime>=1.0.1",
 ]
