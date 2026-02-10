@@ -47,6 +47,7 @@ class VoiceVerification(VerificationMethod):
     
     def verify(self, data: Union[str, NDArray[Any], IO[bytes]], centroids: Sequence[Tuple[int, NDArray[Any]]]) -> Sequence[Tuple[int, float]]:
         speech_length_ok, total_speech_duration = self._check_audio_length(data)
+        print(f"Total speech duration: {total_speech_duration:.2f} seconds")
         if not speech_length_ok:
             return []
         if isinstance(data, BytesIO):
@@ -73,7 +74,7 @@ class VoiceVerification(VerificationMethod):
         centroid = np.mean(embeddings, axis=0)
         return centroid
     
-    def _check_audio_length(self, audio_data: Union[str, NDArray[Any], IO[bytes]], threshold: float = 2.5) -> Tuple[bool, float]:
+    def _check_audio_length(self, audio_data: Union[str, NDArray[Any], IO[bytes]], threshold: float = 2) -> Tuple[bool, float]:
         if isinstance(audio_data, str) or isinstance(audio_data, BytesIO):
             audio_data = self.read_audio(audio_data, sampling_rate=16000)
         speech_timestamps = self.get_speech_timestamps(torch.tensor(audio_data), self.vad, return_seconds=True)
@@ -134,6 +135,7 @@ class VerificationManager:
                 method_name, result = fut.result()
                 best_users[method_name] = result
 
+        print("Best users by method:", best_users)
         return self._combine_scores(best_users)
     
     def _combine_scores(self, best_users: Mapping[str, Sequence[Tuple[int, str, float]]]) -> Union[Mapping[str, Tuple[int, str, float]], Mapping[str, str]]:

@@ -49,7 +49,7 @@ class Engine:
         CHUNK = 1024
         FORMAT = pyaudio.paInt16
         CHANNELS = 1
-        RATE = 44100
+        RATE = 16000 ## MUST BE KEPT AT 16000 FOR VAD TO WORK PROPERLY ON RASPBERRY PI, DO NOT CHANGE TO 44100 ##
         RECORD_SECONDS = duration_s
         WAVE_OUTPUT_FILENAME = "output.wav"
 
@@ -66,7 +66,18 @@ class Engine:
         frames = []
         face_selector = FaceSelector(max_faces=max_faces)
 
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture("/dev/video0", cv2.CAP_V4L2)
+        print("cap opened:", cap.isOpened())
+        if not cap.isOpened():
+            raise RuntimeError("Failed to open /dev/video0")
+
+        cap.set(cv2.CAP_PROP_FPS, 30)
+
+        print("backend:", cap.getBackendName())
+        print("fourcc:", int(cap.get(cv2.CAP_PROP_FOURCC)))
+        print("size:", cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print("fps:", cap.get(cv2.CAP_PROP_FPS))
+        
         with face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.6) as detector:
             start = time.time()
             previous_time = time.time() * 1000
