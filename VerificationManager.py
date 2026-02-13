@@ -167,3 +167,10 @@ class VerificationManager:
                 'voice_match': (best_voice_user_id, best_voice_user_name, best_voice_score),
                 'face_match': (face_user_id, face_user_name, face_score),
                 'combined_score': (voice_confidence * interpolation_weight + clipped_face_confidence * (1 - interpolation_weight)).item()}
+
+    def get_user_list(self) -> Sequence[Tuple[int, str]]:
+        return self.cursor.execute("SELECT id, name FROM users;").fetchall()
+    
+    def delete_user(self, name: str) -> None:
+        self.cursor.execute("DELETE FROM users WHERE name = ?;", (name,))
+        self.enrolled_users_db.commit()

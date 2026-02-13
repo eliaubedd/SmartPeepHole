@@ -1,9 +1,11 @@
-# app.py
 import queue
 import threading
 from dataclasses import dataclass
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Header
+from typing import Annotated, Optional
 from pydantic import BaseModel
+import sqlite3
+import requests
 
 from VerificationManager import VerificationManager, FaceVerification, VoiceVerification
 from FaceDetection import detect_bbox_and_eyes, rotate_and_crop
@@ -15,13 +17,25 @@ from io import BytesIO
 import pyaudio
 import wave
 from mediapipe.python.solutions import face_detection
-
 from sortedcontainers import SortedList
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+DEVICE_CODE = os.getenv("DEVICE_ID")
+
+if not BOT_TOKEN or not DEVICE_CODE:
+    raise ValueError("Missing required environment variables: TELEGRAM_BOT_TOKEN or DEVICE_ID")
 
 app = FastAPI()
 
 class EnrollReq(BaseModel):
     name: str
+
+class OwnerRegReq(BaseModel):
+    code: str
 
 class FaceSelector:
     def __init__(self, max_faces: int = 5):
@@ -42,8 +56,26 @@ class Engine:
     def __init__(self):
         fv_model = FaceVerification(model_name='Facenet512')
         self.verification_manager = VerificationManager(methods={'face_verification': fv_model, 'voice_verification': VoiceVerification(lang='en')})
+        self.conn = sqlite3.connect("pairings.db", check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        self.cursor.execute("""CREATE TABLE IF NOT EXISTS pairings (
+            user_id INTEGER PRIMARY KEY,
+            raspberry_id TEXT NOT NULL
+        )""")
+        #self.cursor.execute("PRAGMA journal_mode=WAL;")
+        self.conn.commit()
 
-
+        self.history_conn = sqlite3.connect("history.db", check_same_thread=False)
+        self.history_cursor = self.history_conn.cursor()
+        self.history_cursor.execute("""CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            verification_result TEXT NOT NULL,
+            match TEXT,
+            combined_score REAL
+        )""")
+        self.history_conn.commit()
+        self.history_cursor = self.history_conn.cursor()
 
     def record_data(self, duration_s: int = 5, max_faces: int = 5) -> tuple[BytesIO, list[np.ndarray]]:
         CHUNK = 1024
@@ -51,7 +83,6 @@ class Engine:
         CHANNELS = 1
         RATE = 16000 ## MUST BE KEPT AT 16000 FOR VAD TO WORK PROPERLY ON RASPBERRY PI, DO NOT CHANGE TO 44100 ##
         RECORD_SECONDS = duration_s
-        WAVE_OUTPUT_FILENAME = "output.wav"
 
         p = pyaudio.PyAudio()
 
@@ -154,18 +185,58 @@ class Engine:
             print(f"Error during verification: {e}")
             raise HTTPException(status_code=500, detail="Verification failed due to an internal error.")
         print(f"Verification result: {result}")
+
+        self.send_notification(video[0][1], result)
+
+        self.history_cursor.execute("INSERT INTO history (verification_result, match, combined_score) VALUES (?, ?, ?)",
+                                    (result.get("result"), result.get("voice_match")[1] if result.get("voice_match") else None, result.get("combined_score")))
+        self.history_conn.commit()
+
         return result
+
+    def send_notification(self, face_img: np.ndarray, verification_result: dict):
+        self.cursor.execute("SELECT user_id FROM pairings WHERE raspberry_id = ?", (DEVICE_CODE,))
+        rows = self.cursor.fetchall()
+        if not rows:
+            print("No paired Telegram user found for this device.")
+            return
+
+        for row in rows:
+            user_id = row[0]
+
+            if verification_result.get("result") == "accept":
+                caption = f"""🔔 Visitor Alert
+    A visitor has been detected at your door.
+    It appears to be {verification_result['voice_match'][1]} (confidence: {verification_result['combined_score']:.2f}).
+    See attached image."""
+            else:
+                caption = f"""🔔 Visitor Alert
+    A visitor has been detected at your door.
+    We can't identify this person, it appears to be none of your enrolled users.
+    See attached image."""
+
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+            _, img_encoded = cv2.imencode(".jpg", face_img)
+            files = {"photo": ("image.jpg", img_encoded.tobytes())}
+            data = {"chat_id": user_id, "caption": caption}
+            try:
+                r = requests.post(url, data=data, files=files, timeout=20)
+                r.raise_for_status()
+            except Exception as e:
+                print(f"Failed to send notification to user {user_id}: {e}")
 
 engine = Engine()
 busy_lock = threading.Lock()
 
 @app.get("/status")
 def status():
-    cv2.imwrite("test_face.jpg", engine.record_data(duration_s=5, max_faces=5)[1][0][1])
-    return {"status": "ok"}
+    return {"ring_active": True}
 
+#add user token to authenticate request
 @app.post("/enroll")
-def enroll(req: EnrollReq):
+def enroll(req: EnrollReq, authorization: Annotated[Optional[str], Header()] = None):
+    if authorization != DEVICE_CODE:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     if not busy_lock.acquire(blocking=False):
         raise HTTPException(status_code=429, detail="Server is busy processing another request. Please try again later.")
     try:
@@ -176,7 +247,10 @@ def enroll(req: EnrollReq):
     
 
 @app.post("/verify")
-def verify():
+def verify(authorization: Annotated[Optional[str], Header()] = None):
+    print("Received verification request with token:", authorization)
+    if authorization != DEVICE_CODE:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     if not busy_lock.acquire(blocking=False):
         raise HTTPException(status_code=429, detail="Server is busy processing another request. Please try again later.")
     try:
@@ -185,4 +259,34 @@ def verify():
         busy_lock.release()
     return result
 
-## 192.168.1.150
+@app.post("/history")
+def history(authorization: Annotated[Optional[str], Header()] = None):
+    if authorization != DEVICE_CODE:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    engine.history_cursor.execute("SELECT timestamp, verification_result, match, combined_score FROM history ORDER BY timestamp DESC LIMIT 20")
+    rows = engine.history_cursor.fetchall()
+    history = []
+    for row in rows:
+        history.append({
+            "timestamp": row[0],
+            "verification_result": row[1],
+            "match": row[2],
+            "combined_score": row[3]
+        })
+    print("Returning history:", history)
+    return {"history": history}
+
+@app.post("/users")
+def users(authorization: Annotated[Optional[str], Header()] = None):
+    if authorization != DEVICE_CODE:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    rows = engine.verification_manager.get_user_list()
+    users = [row[1] for row in rows]
+    return {"users": users}
+
+@app.delete("/users/{name}")
+def delete_user(name: str, authorization: Annotated[Optional[str], Header()] = None):
+    if authorization != DEVICE_CODE:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    engine.verification_manager.delete_user(name)
+    return {"ok": True}
