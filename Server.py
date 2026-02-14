@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import sqlite3
 import requests
 
-from VerificationManager import VerificationManager, FaceVerification, VoiceVerification
+from VerificationManager import RecognitionManager, FaceRecognition, VoiceRecognition
 from FaceDetection import detect_bbox_and_eyes, rotate_and_crop
 import cv2
 import numpy as np
@@ -54,8 +54,8 @@ class FaceSelector:
         
 class Engine:
     def __init__(self):
-        fv_model = FaceVerification(model_name='Facenet512')
-        self.verification_manager = VerificationManager(methods={'face_verification': fv_model, 'voice_verification': VoiceVerification(lang='en')})
+        fv_model = FaceRecognition(model_name='Facenet512')
+        self.verification_manager = RecognitionManager(methods={'face_verification': fv_model, 'voice_verification': VoiceRecognition(lang='en')})
         self.conn = sqlite3.connect("pairings.db", check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.cursor.execute("""CREATE TABLE IF NOT EXISTS pairings (

@@ -10,7 +10,7 @@ from io import BytesIO
 import numpy as np
 import wespeakerruntime as wespeaker
 
-class VerificationMethod(ABC):
+class RecognitionMethod(ABC):
     @abstractmethod
     def verify(self, data: Union[str, NDArray[Any], IO[bytes], Sequence[Union[str, NDArray[Any], IO[bytes]]]], centroids: Sequence[Tuple[int, NDArray[Any]]]) -> Sequence[Tuple[int, float]]:
         pass
@@ -19,7 +19,7 @@ class VerificationMethod(ABC):
     def enroll_user(self, examples: Sequence[Union[str, NDArray[Any], IO[bytes]]]) -> NDArray[Any]:
         pass
 
-class FaceVerification(VerificationMethod):
+class FaceRecognition(RecognitionMethod):
     def __init__(self, model_name: str = None):
         self.model_name = model_name
     
@@ -38,7 +38,7 @@ class FaceVerification(VerificationMethod):
         centroid = np.mean(embeddings, axis=0)
         return centroid
     
-class VoiceVerification(VerificationMethod):
+class VoiceRecognition(RecognitionMethod):
     def __init__(self, lang: str = "en"):
         self.lang = lang
         self.spk = wespeaker.Speaker(lang=lang, inter_op_num_threads=4, intra_op_num_threads=4)
@@ -81,8 +81,8 @@ class VoiceVerification(VerificationMethod):
         total_speech_duration = sum(subset['end'] - subset['start'] for subset in speech_timestamps)
         return total_speech_duration >= threshold, total_speech_duration
 
-class VerificationManager:
-    def __init__(self, methods: Mapping[str, VerificationMethod], enrolled_users_db_name: str = 'enrolled_users.db'):
+class RecognitionManager:
+    def __init__(self, methods: Mapping[str, RecognitionMethod], enrolled_users_db_name: str = 'enrolled_users.db'):
         self.methods = methods
         self.enrolled_users_db = sqlite3.connect(enrolled_users_db_name, check_same_thread=False)
         self.cursor = self.enrolled_users_db.cursor()
