@@ -47,7 +47,7 @@ class VoiceRecognition(RecognitionMethod):
     
     def verify(self, data: Union[str, NDArray[Any], IO[bytes]], centroids: Sequence[Tuple[int, NDArray[Any]]]) -> Sequence[Tuple[int, float]]:
         speech_length_ok, total_speech_duration = self._check_audio_length(data)
-        print(f"Total speech duration: {total_speech_duration:.2f} seconds")
+        #print(f"Total speech duration: {total_speech_duration:.2f} seconds")
         if not speech_length_ok:
             return []
         if isinstance(data, BytesIO):
@@ -57,7 +57,10 @@ class VoiceRecognition(RecognitionMethod):
         user_scores = []
         for user_id, embedding_blob in centroids:
             enrolled_embedding = np.frombuffer(embedding_blob, dtype=np.float32)
-            similarity = ((cosine_similarity([target_embedding], [enrolled_embedding]) + 1) / 2)[0][0].item()
+            try:
+                similarity = ((cosine_similarity([target_embedding], [enrolled_embedding]) + 1) / 2)[0][0].item()
+            except ValueError:
+                similarity = 0.0
             user_scores.append((user_id, similarity))
         return sorted(user_scores, key=lambda x: x[1], reverse=True)[:5]
     
@@ -135,7 +138,7 @@ class RecognitionManager:
                 method_name, result = fut.result()
                 best_users[method_name] = result
 
-        print("Best users by method:", best_users)
+        #print("Best users by method:", best_users)
         return self._combine_scores(best_users)
     
     def _combine_scores(self, best_users: Mapping[str, Sequence[Tuple[int, str, float]]]) -> Union[Mapping[str, Tuple[int, str, float]], Mapping[str, str]]:

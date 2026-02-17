@@ -165,7 +165,7 @@ class Engine:
         return file_in_memory, face_selector.get_best_faces()
 
     def enroll(self, name: str) -> dict:
-        audio, video = self.record_data(duration_s=5, max_faces=5)
+        audio, video = self.record_data(duration_s=5, max_faces=10)
         if any(score < 0.85 for score, _ in video):
             raise HTTPException(status_code=400, detail="Not enough faces detected during enrollment. Please try again.")
         try:
